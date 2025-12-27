@@ -27,7 +27,11 @@ const SOFT_BLOCK_HINTS = [
   "subscribe to continue",
   "sign in to continue",
   "paywall",
-  "your browser is out of date"
+  "your browser is out of date",
+  "metered",
+  "subscribe to read",
+  "continue reading",
+  "allow cookies"
 ];
 
 const fetchConcurrency = Number(process.env.DIRECT_FETCH_CONCURRENCY || 10);
@@ -36,6 +40,8 @@ const pythonConcurrency = Number(process.env.PYTHON_CONCURRENCY || 4);
 const fetchTimeoutMs = Number(process.env.FETCH_TIMEOUT_MS || 25000);
 const playwrightTimeoutMs = Number(process.env.PLAYWRIGHT_TIMEOUT_MS || 60000);
 const enablePlaywright = String(process.env.ENABLE_PLAYWRIGHT || "false").toLowerCase() === "true";
+const enableJinaReader = String(process.env.ENABLE_JINA_READER || "false").toLowerCase() === "true";
+const jinaReaderTimeoutMs = Number(process.env.JINA_READER_TIMEOUT_MS || 15000);
 
 const rowQueue = new PQueue({ concurrency: fetchConcurrency });
 const playwrightQueue = new PQueue({ concurrency: playwrightConcurrency });
@@ -92,6 +98,39 @@ async function fetchHtml(url) {
   return { ok: false, status: 0, html: "", error: lastError || "fetch_failed" };
 }
 
+function buildJinaReaderUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `https://r.jina.ai/${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function fetchTextWithJinaReader(url) {
+  if (!enableJinaReader) return null;
+  const readerUrl = buildJinaReaderUrl(url);
+  if (!readerUrl) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), jinaReaderTimeoutMs);
+  try {
+    const res = await fetch(readerUrl, {
+      headers: DEFAULT_HEADERS,
+      redirect: "follow",
+      signal: controller.signal
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, text: "" };
+    }
+    const text = await res.text();
+    return { ok: Boolean(text), status: res.status, text };
+  } catch (error) {
+    return { ok: false, status: 0, text: "" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchHtmlWithPlaywright(url) {
   if (!enablePlaywright) return null;
   let playwright;
@@ -104,8 +143,15 @@ async function fetchHtmlWithPlaywright(url) {
   return playwrightQueue.add(async () => {
     const browser = await playwright.chromium.launch({ headless: true });
     const page = await browser.newPage({ userAgent: DEFAULT_HEADERS["User-Agent"] });
+    await page.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      if (["image", "media", "font", "stylesheet"].includes(type)) {
+        return route.abort();
+      }
+      return route.continue();
+    });
     try {
-      await page.goto(url, { waitUntil: "networkidle", timeout: playwrightTimeoutMs });
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: playwrightTimeoutMs });
       const html = await page.content();
       await browser.close();
       return html;
@@ -299,6 +345,41 @@ export async function processRow(row) {
         word_count: result.wordCount
       });
       return;
+    }
+  }
+
+  if (enableJinaReader) {
+    const reader = await fetchTextWithJinaReader(row.url);
+    if (reader && reader.text) {
+      row.extraction.attempts.push({ method: "fetch_jina_reader", ok: true });
+      const normalized = normalizeWhitespace(reader.text);
+      const quality = evaluateQuality(normalized);
+      row.extraction.attempts.push({
+        method: "jina_reader",
+        ok: quality.passes,
+        wordCount: quality.wordCount,
+        reasons: quality.reasons
+      });
+      if (quality.passes) {
+        row.extraction.status = "OK";
+        row.extraction.method = "jina_reader";
+        row.extraction.notes = "jina_reader";
+        row.extraction.text = normalized;
+        row.extraction.wordCount = quality.wordCount;
+        writeCache(row.url, {
+          html: "",
+          extracted_text: normalized,
+          method: "jina_reader",
+          word_count: quality.wordCount
+        });
+        return;
+      }
+    } else if (reader) {
+      row.extraction.attempts.push({
+        method: "fetch_jina_reader",
+        ok: false,
+        error: reader.status ? `status_${reader.status}` : "reader_failed"
+      });
     }
   }
 

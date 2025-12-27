@@ -323,7 +323,7 @@ export default function App() {
       <header className="hero">
         <div className="hero-title">
           <p className="eyebrow">Local Leeds Index Pipeline</p>
-          <h1>PostFilter</h1>
+          <h1>Selection Assistant</h1>
           <p className="subtitle">
             Extract article text, run batch summaries, and classify protest events with the Leeds Index codebook.
           </p>
