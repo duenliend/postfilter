@@ -312,20 +312,6 @@ async function buildHtmlCandidates(url, row) {
     }
   }
 
-  if (enableJinaReader) {
-    const reader = await fetchTextWithJinaReader(url);
-    if (reader && reader.text) {
-      candidates.push({ text: reader.text, source: "jina_reader" });
-      row.extraction.attempts.push({ method: "fetch_jina_reader", ok: true });
-    } else if (reader) {
-      row.extraction.attempts.push({
-        method: "fetch_jina_reader",
-        ok: false,
-        error: reader.status ? `status_${reader.status}` : "reader_failed"
-      });
-    }
-  }
-
   return candidates;
 }
 
@@ -345,31 +331,6 @@ export async function processRow(row) {
 
   const candidates = await buildHtmlCandidates(row.url, row);
   for (const candidate of candidates) {
-    if (candidate.text) {
-      const normalized = normalizeWhitespace(candidate.text);
-      const quality = evaluateQuality(normalized);
-      row.extraction.attempts.push({
-        method: "jina_reader",
-        ok: quality.passes,
-        wordCount: quality.wordCount,
-        reasons: quality.reasons
-      });
-      if (quality.passes) {
-        row.extraction.status = "OK";
-        row.extraction.method = "jina_reader";
-        row.extraction.notes = `${candidate.source}`;
-        row.extraction.text = normalized;
-        row.extraction.wordCount = quality.wordCount;
-        writeCache(row.url, {
-          html: "",
-          extracted_text: normalized,
-          method: "jina_reader",
-          word_count: quality.wordCount
-        });
-        return;
-      }
-      continue;
-    }
     const result = await extractFromHtml(candidate.html, row.url, row);
     if (result && result.text) {
       row.extraction.status = "OK";
@@ -384,6 +345,41 @@ export async function processRow(row) {
         word_count: result.wordCount
       });
       return;
+    }
+  }
+
+  if (enableJinaReader) {
+    const reader = await fetchTextWithJinaReader(row.url);
+    if (reader && reader.text) {
+      row.extraction.attempts.push({ method: "fetch_jina_reader", ok: true });
+      const normalized = normalizeWhitespace(reader.text);
+      const quality = evaluateQuality(normalized);
+      row.extraction.attempts.push({
+        method: "jina_reader",
+        ok: quality.passes,
+        wordCount: quality.wordCount,
+        reasons: quality.reasons
+      });
+      if (quality.passes) {
+        row.extraction.status = "OK";
+        row.extraction.method = "jina_reader";
+        row.extraction.notes = "jina_reader";
+        row.extraction.text = normalized;
+        row.extraction.wordCount = quality.wordCount;
+        writeCache(row.url, {
+          html: "",
+          extracted_text: normalized,
+          method: "jina_reader",
+          word_count: quality.wordCount
+        });
+        return;
+      }
+    } else if (reader) {
+      row.extraction.attempts.push({
+        method: "fetch_jina_reader",
+        ok: false,
+        error: reader.status ? `status_${reader.status}` : "reader_failed"
+      });
     }
   }
 
