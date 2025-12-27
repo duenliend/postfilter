@@ -1,0 +1,27 @@
+{
+  "name": "postfilter-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@extractus/article-extractor": "^8.0.4",
+    "@mozilla/readability": "^0.5.0",
+    "@postlight/mercury-parser": "^2.2.0",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "html-to-text": "^9.0.5",
+    "jsdom": "^24.0.0",
+    "multer": "^1.4.5-lts.1",
+    "p-queue": "^8.0.1",
+    "playwright": "^1.57.0",
+    "undici": "^6.19.2",
+    "unfluff": "^3.2.0",
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
+  }
+}

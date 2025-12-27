@@ -1,0 +1,9 @@
+node_modules
+.cache
+uploads
+.env
+*.log
+.DS_Store
+frontend/dist
+backend/.env
+.venv
