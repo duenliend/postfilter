@@ -329,11 +329,6 @@ export default function App() {
           </p>
         </div>
         <div className="hero-card">
-          <div className="hero-meta">
-            <span className="tag">React 19 UI</span>
-            <span className="tag">Local backend</span>
-            <span className="tag">Batch API</span>
-          </div>
           <div className="hero-stats">
             <div>
               <p className="stat-label">Dataset</p>
